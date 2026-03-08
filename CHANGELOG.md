@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix Connect track artist extraction for nested artist containers and minimal artist fragments (`#7`, thanks @joelbdavies)
+
 ## 0.3.0 - 2026-03-08
 
 - Release prep: bump CLI/spec version to `0.3.0`
