@@ -137,19 +137,75 @@ func (c *ConnectClient) Queue(ctx context.Context) (Queue, error) {
 }
 
 func (c *ConnectClient) LibraryTracks(ctx context.Context, limit, offset int) ([]Item, int, error) {
-	items, total, err := c.libraryTracks(ctx, limit, offset)
-	if err == nil {
-		return items, total, nil
-	}
-	web, werr := c.webClient()
-	if werr != nil {
-		return nil, 0, err
-	}
-	return web.LibraryTracks(ctx, limit, offset)
+	return withWebCollectionFallback(c, func() ([]Item, int, error) {
+		return c.libraryTracks(ctx, limit, offset)
+	}, func(web *Client) ([]Item, int, error) {
+		return web.LibraryTracks(ctx, limit, offset)
+	})
 }
 
 func (c *ConnectClient) LibraryAlbums(ctx context.Context, limit, offset int) ([]Item, int, error) {
-	items, total, err := c.libraryAlbums(ctx, limit, offset)
+	return withWebCollectionFallback(c, func() ([]Item, int, error) {
+		return c.libraryAlbums(ctx, limit, offset)
+	}, func(web *Client) ([]Item, int, error) {
+		return web.LibraryAlbums(ctx, limit, offset)
+	})
+}
+
+func (c *ConnectClient) LibraryModify(ctx context.Context, path string, ids []string, method string) error {
+	return withWebFallback(c, func(web *Client) error {
+		return web.LibraryModify(ctx, path, ids, method)
+	})
+}
+
+func (c *ConnectClient) FollowArtists(ctx context.Context, ids []string, method string) error {
+	return withWebFallback(c, func(web *Client) error {
+		return web.FollowArtists(ctx, ids, method)
+	})
+}
+
+func (c *ConnectClient) FollowedArtists(ctx context.Context, limit int, after string) ([]Item, int, string, error) {
+	return withWebCursorFallback(c, func(web *Client) ([]Item, int, string, error) {
+		return web.FollowedArtists(ctx, limit, after)
+	})
+}
+
+func (c *ConnectClient) Playlists(ctx context.Context, limit, offset int) ([]Item, int, error) {
+	return withWebCollectionFallback(c, func() ([]Item, int, error) {
+		return c.playlists(ctx, limit, offset)
+	}, func(web *Client) ([]Item, int, error) {
+		return web.Playlists(ctx, limit, offset)
+	})
+}
+
+func (c *ConnectClient) PlaylistTracks(ctx context.Context, id string, limit, offset int) ([]Item, int, error) {
+	return withWebCollectionFallback(c, func() ([]Item, int, error) {
+		return c.playlistTracks(ctx, id, limit, offset)
+	}, func(web *Client) ([]Item, int, error) {
+		return web.PlaylistTracks(ctx, id, limit, offset)
+	})
+}
+
+func (c *ConnectClient) CreatePlaylist(ctx context.Context, name string, public, collaborative bool) (Item, error) {
+	return withWebItemFallback(c, func(web *Client) (Item, error) {
+		return web.CreatePlaylist(ctx, name, public, collaborative)
+	})
+}
+
+func (c *ConnectClient) AddTracks(ctx context.Context, playlistID string, uris []string) error {
+	return withWebFallback(c, func(web *Client) error {
+		return web.AddTracks(ctx, playlistID, uris)
+	})
+}
+
+func (c *ConnectClient) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {
+	return withWebFallback(c, func(web *Client) error {
+		return web.RemoveTracks(ctx, playlistID, uris)
+	})
+}
+
+func withWebCollectionFallback(c *ConnectClient, primary func() ([]Item, int, error), fallback func(*Client) ([]Item, int, error)) ([]Item, int, error) {
+	items, total, err := primary()
 	if err == nil {
 		return items, total, nil
 	}
@@ -157,77 +213,29 @@ func (c *ConnectClient) LibraryAlbums(ctx context.Context, limit, offset int) ([
 	if werr != nil {
 		return nil, 0, err
 	}
-	return web.LibraryAlbums(ctx, limit, offset)
+	return fallback(web)
 }
 
-func (c *ConnectClient) LibraryModify(ctx context.Context, path string, ids []string, method string) error {
-	web, err := c.webClient()
-	if err != nil {
-		return err
-	}
-	return web.LibraryModify(ctx, path, ids, method)
-}
-
-func (c *ConnectClient) FollowArtists(ctx context.Context, ids []string, method string) error {
-	web, err := c.webClient()
-	if err != nil {
-		return err
-	}
-	return web.FollowArtists(ctx, ids, method)
-}
-
-func (c *ConnectClient) FollowedArtists(ctx context.Context, limit int, after string) ([]Item, int, string, error) {
+func withWebCursorFallback(c *ConnectClient, fallback func(*Client) ([]Item, int, string, error)) ([]Item, int, string, error) {
 	web, err := c.webClient()
 	if err != nil {
 		return nil, 0, "", err
 	}
-	return web.FollowedArtists(ctx, limit, after)
+	return fallback(web)
 }
 
-func (c *ConnectClient) Playlists(ctx context.Context, limit, offset int) ([]Item, int, error) {
-	items, total, err := c.playlists(ctx, limit, offset)
-	if err == nil {
-		return items, total, nil
-	}
-	web, werr := c.webClient()
-	if werr != nil {
-		return nil, 0, err
-	}
-	return web.Playlists(ctx, limit, offset)
-}
-
-func (c *ConnectClient) PlaylistTracks(ctx context.Context, id string, limit, offset int) ([]Item, int, error) {
-	items, total, err := c.playlistTracks(ctx, id, limit, offset)
-	if err == nil {
-		return items, total, nil
-	}
-	web, werr := c.webClient()
-	if werr != nil {
-		return nil, 0, err
-	}
-	return web.PlaylistTracks(ctx, id, limit, offset)
-}
-
-func (c *ConnectClient) CreatePlaylist(ctx context.Context, name string, public, collaborative bool) (Item, error) {
+func withWebItemFallback(c *ConnectClient, fallback func(*Client) (Item, error)) (Item, error) {
 	web, err := c.webClient()
 	if err != nil {
 		return Item{}, err
 	}
-	return web.CreatePlaylist(ctx, name, public, collaborative)
+	return fallback(web)
 }
 
-func (c *ConnectClient) AddTracks(ctx context.Context, playlistID string, uris []string) error {
+func withWebFallback(c *ConnectClient, fallback func(*Client) error) error {
 	web, err := c.webClient()
 	if err != nil {
 		return err
 	}
-	return web.AddTracks(ctx, playlistID, uris)
-}
-
-func (c *ConnectClient) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {
-	web, err := c.webClient()
-	if err != nil {
-		return err
-	}
-	return web.RemoveTracks(ctx, playlistID, uris)
+	return fallback(web)
 }
