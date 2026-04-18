@@ -1,4 +1,4 @@
-> [!INFO]
+> [!NOTE]
 > `spogo` takes 5+ seconds to perform actions, running a daemon in the background that caches things makes it *much* faster. This was completely vibe-coded, don't expect it to ever be production-ready without a miracle.
 
 # 🎧 spogo - Spotify, but make it terminal.
