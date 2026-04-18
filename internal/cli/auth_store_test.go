@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/steipete/spogo/internal/config"
@@ -33,7 +34,12 @@ func TestAuthClearCmdSuccess(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	script := filepath.Join(dir, "trash")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	scriptBody := []byte("#!/bin/sh\nexit 0\n")
+	if runtime.GOOS == "windows" {
+		script += ".bat"
+		scriptBody = []byte("@echo off\r\nexit /b 0\r\n")
+	}
+	if err := os.WriteFile(script, scriptBody, 0o755); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	t.Setenv("PATH", dir)

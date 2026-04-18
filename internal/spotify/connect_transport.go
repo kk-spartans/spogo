@@ -95,6 +95,7 @@ func (c *ConnectClient) connectState(ctx context.Context) (connectState, error) 
 	if origin := mapPlayOriginID(state.playerState); origin != "" {
 		state.originDeviceID = origin
 	}
+	c.cacheCommandRoute(state)
 	return state, nil
 }
 
@@ -224,10 +225,12 @@ func (c *ConnectClient) sendConnectCommand(ctx context.Context, url string, payl
 	})
 	resp, err := c.client.Do(req)
 	if err != nil {
+		c.invalidateCommandRoute()
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		c.invalidateCommandRoute()
 		return apiErrorFromResponse(resp)
 	}
 	return nil

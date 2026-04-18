@@ -8,8 +8,10 @@ import (
 	"net/http"
 )
 
-var ErrNoContent = fmt.Errorf("no content")
-var ErrUnsupported = errors.New("unsupported operation")
+var (
+	ErrNoContent   = fmt.Errorf("no content")
+	ErrUnsupported = errors.New("unsupported operation")
+)
 
 type APIError struct {
 	Status  int

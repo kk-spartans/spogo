@@ -164,7 +164,7 @@ func TestConnectTransferFallsBackToWebAPIWithoutOriginDevice(t *testing.T) {
 			return textResponse(http.StatusNoContent, ""), nil
 		case req.Method == http.MethodPost:
 			t.Fatalf("unexpected connect command: %s", req.URL.Path)
-			return nil, nil
+			return nil, io.EOF
 		default:
 			return textResponse(http.StatusNotFound, "missing"), nil
 		}
@@ -194,6 +194,42 @@ func TestSendPlayerCommandMissingDevice(t *testing.T) {
 	err := client.sendPlayerCommand(context.Background(), connectState{}, "pause", nil)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestConnectPauseUsesCachedRoute(t *testing.T) {
+	var stateCalls int
+	var commandCalls int
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/devices/hobs_"):
+			stateCalls++
+			return jsonResponse(http.StatusOK, map[string]any{
+				"active_device_id": "device-1",
+				"devices": map[string]any{
+					"device-1": map[string]any{"name": "Desk", "device_type": "computer"},
+				},
+			}), nil
+		case req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/player/command/from/"):
+			commandCalls++
+			return textResponse(http.StatusOK, "ok"), nil
+		default:
+			return textResponse(http.StatusNotFound, "missing"), nil
+		}
+	})
+	client := newRegisteredConnectClientForTests(transport)
+
+	if _, err := client.Playback(context.Background()); err != nil {
+		t.Fatalf("playback: %v", err)
+	}
+	if err := client.Pause(context.Background()); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	if stateCalls != 1 {
+		t.Fatalf("expected 1 state call, got %d", stateCalls)
+	}
+	if commandCalls != 1 {
+		t.Fatalf("expected 1 command call, got %d", commandCalls)
 	}
 }
 

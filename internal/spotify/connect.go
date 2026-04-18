@@ -30,6 +30,11 @@ type ConnectClient struct {
 	web          *Client
 	searchURL    string
 	searchClient *http.Client
+
+	routeMu              sync.RWMutex
+	cachedActiveDeviceID string
+	cachedOriginDeviceID string
+	cachedRouteAt        time.Time
 }
 
 func NewConnectClient(opts ConnectOptions) (*ConnectClient, error) {
