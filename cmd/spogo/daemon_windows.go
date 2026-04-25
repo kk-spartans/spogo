@@ -41,6 +41,8 @@ const (
 	daemonRunCallTimeout  = 0
 	daemonStartWait       = 4 * time.Second
 	daemonStartPoll       = 80 * time.Millisecond
+	daemonIdlePollMidTTL  = 20 * time.Second
+	daemonIdlePollHighTTL = 60 * time.Second
 )
 
 type daemonState struct {
@@ -347,11 +349,8 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 			}()
 		})
 	}
-	lastActivity := func() atomic.Int64 {
-		value := atomic.Int64{}
-		value.Store(time.Now().UnixNano())
-		return value
-	}()
+	var lastActivity atomic.Int64
+	lastActivity.Store(time.Now().UnixNano())
 	inFlightRuns := atomic.Int32{}
 	touchActivity := func() {
 		lastActivity.Store(time.Now().UnixNano())
@@ -365,18 +364,21 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 		inFlightRuns.Add(-1)
 	}
 	if daemonTTL > 0 {
+		checkEvery := time.Second
+		if daemonTTL >= daemonIdlePollMidTTL {
+			checkEvery = 10 * time.Second
+		}
+		if daemonTTL >= daemonIdlePollHighTTL {
+			checkEvery = 30 * time.Second
+		}
 		go func() {
-			ticker := time.NewTicker(time.Second)
+			ticker := time.NewTicker(checkEvery)
 			defer ticker.Stop()
 			for range ticker.C {
 				if inFlightRuns.Load() > 0 {
 					continue
 				}
-				last := lastActivity.Load()
-				if last == 0 {
-					continue
-				}
-				if time.Since(time.Unix(0, last)) >= daemonTTL {
+				if time.Now().UnixNano()-lastActivity.Load() >= daemonTTL.Nanoseconds() {
 					runner.logf("idle-timeout reached (%s), shutting down", daemonTTL)
 					shutdown()
 					return
@@ -726,8 +728,11 @@ func daemonTTLFromEnv() (time.Duration, error) {
 		return 0, nil
 	}
 	seconds, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || seconds < 0 {
-		return 0, fmt.Errorf("SPOGO_DAEMON_TTL must be a non-negative integer (seconds), got %q", raw)
+	if err != nil {
+		return 0, fmt.Errorf("SPOGO_DAEMON_TTL must be an integer number of seconds, got %q: %w", raw, err)
+	}
+	if seconds < 0 {
+		return 0, fmt.Errorf("SPOGO_DAEMON_TTL must be >= 0 seconds, got %q", raw)
 	}
 	return time.Duration(seconds) * time.Second, nil
 }
