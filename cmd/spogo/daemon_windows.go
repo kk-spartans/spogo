@@ -154,25 +154,16 @@ func proxyToDaemon(args []string, out io.Writer, errOut io.Writer) (int, bool) {
 	if err != nil {
 		return 0, false
 	}
-	state, err := readDaemonState(statePath)
-	if err != nil {
-		if !startDaemonForProxy(args, errOut) {
-			return 0, false
-		}
-		state, err = readDaemonState(statePath)
-		if err != nil {
-			return 0, false
-		}
+	state, ok := ensureDaemonRunning(args, statePath, errOut)
+	if !ok {
+		return 0, false
 	}
 	var response daemonRunResponse
 	err = callDaemon(state, "/run", daemonRunRequest{Args: args}, &response, daemonRunCallTimeout)
 	if err != nil {
 		_ = os.Remove(statePath)
-		if !startDaemonForProxy(args, errOut) {
-			return 0, false
-		}
-		state, err = readDaemonState(statePath)
-		if err != nil {
+		state, ok = ensureDaemonRunning(args, statePath, errOut)
+		if !ok {
 			return 0, false
 		}
 		if err = callDaemon(state, "/run", daemonRunRequest{Args: args}, &response, daemonRunCallTimeout); err != nil {
@@ -210,6 +201,21 @@ func shouldProxyViaDaemon(args []string) bool {
 		return false
 	}
 	return true
+}
+
+func ensureDaemonRunning(args []string, statePath string, errOut io.Writer) (daemonState, bool) {
+	state, err := readDaemonState(statePath)
+	if err == nil {
+		return state, true
+	}
+	if !startDaemonForProxy(args, errOut) {
+		return daemonState{}, false
+	}
+	state, err = readDaemonState(statePath)
+	if err != nil {
+		return daemonState{}, false
+	}
+	return state, true
 }
 
 func startDaemonForProxy(args []string, errOut io.Writer) bool {
@@ -371,7 +377,7 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 			return
 		}
 		if isDaemonInternalCommand(req.Args) {
-			runner.logf("run:bad-request internal-daemon-command")
+			runner.logf("run:bad-request internal-command")
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(daemonRunResponse{ExitCode: 2, Error: "daemon internal commands cannot run through daemon"})
 			return
