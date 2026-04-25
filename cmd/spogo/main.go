@@ -19,8 +19,8 @@ func main() {
 }
 
 func run(args []string, out io.Writer, errOut io.Writer) int {
-	if isDaemonCommand(args) {
-		return runDaemonCommand(args, out, errOut)
+	if shouldRunDaemonServer(args) {
+		return runDaemonServe(args, out, errOut)
 	}
 	if code, ok := proxyToDaemon(args, out, errOut); ok {
 		return code

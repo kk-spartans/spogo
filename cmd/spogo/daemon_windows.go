@@ -28,7 +28,8 @@ import (
 )
 
 const (
-	daemonName            = "daemon"
+	daemonInternalCommand = "__daemon"
+	daemonServeCommand    = "serve"
 	daemonStateFilename   = "daemon.json"
 	daemonLogFilename     = "daemon.log"
 	daemonStateVersion    = 1
@@ -140,34 +141,9 @@ func daemonSettingsKey(settings app.Settings) string {
 	}, "\x1f")
 }
 
-func isDaemonCommand(args []string) bool {
-	cmd, _, ok := firstCommandToken(args)
-	if !ok {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(cmd), daemonName)
-}
-
-func runDaemonCommand(args []string, out io.Writer, errOut io.Writer) int {
-	sub, _, ok := daemonSubcommand(args)
-	if !ok {
-		writeDaemonUsage(errOut)
-		return 2
-	}
-	switch sub {
-	case "start":
-		return runDaemonStart(args, out, errOut)
-	case "serve":
-		return runDaemonServe(args, out, errOut)
-	case "stop":
-		return runDaemonStop(args, out, errOut)
-	case "status":
-		return runDaemonStatus(args, out, errOut)
-	default:
-		_, _ = fmt.Fprintf(errOut, "unknown daemon subcommand %q\n", sub)
-		writeDaemonUsage(errOut)
-		return 2
-	}
+func shouldRunDaemonServer(args []string) bool {
+	sub, _, ok := daemonInternalSubcommand(args)
+	return ok && sub == daemonServeCommand
 }
 
 func proxyToDaemon(args []string, out io.Writer, errOut io.Writer) (int, bool) {
@@ -180,13 +156,29 @@ func proxyToDaemon(args []string, out io.Writer, errOut io.Writer) (int, bool) {
 	}
 	state, err := readDaemonState(statePath)
 	if err != nil {
-		return 0, false
+		if !startDaemonForProxy(args, errOut) {
+			return 0, false
+		}
+		state, err = readDaemonState(statePath)
+		if err != nil {
+			return 0, false
+		}
 	}
 	var response daemonRunResponse
 	err = callDaemon(state, "/run", daemonRunRequest{Args: args}, &response, daemonRunCallTimeout)
 	if err != nil {
 		_ = os.Remove(statePath)
-		return 0, false
+		if !startDaemonForProxy(args, errOut) {
+			return 0, false
+		}
+		state, err = readDaemonState(statePath)
+		if err != nil {
+			return 0, false
+		}
+		if err = callDaemon(state, "/run", daemonRunRequest{Args: args}, &response, daemonRunCallTimeout); err != nil {
+			_ = os.Remove(statePath)
+			return 0, false
+		}
 	}
 	if response.Stdout != "" {
 		_, _ = io.WriteString(out, response.Stdout)
@@ -207,7 +199,7 @@ func shouldProxyViaDaemon(args []string) bool {
 	if len(args) == 0 {
 		return false
 	}
-	if isDaemonCommand(args) {
+	if isDaemonInternalCommand(args) {
 		return false
 	}
 	cmd, idx, ok := firstCommandToken(args)
@@ -215,6 +207,17 @@ func shouldProxyViaDaemon(args []string) bool {
 		return false
 	}
 	if strings.EqualFold(cmd, "auth") && idx+1 < len(args) && strings.EqualFold(args[idx+1], "paste") {
+		return false
+	}
+	return true
+}
+
+func startDaemonForProxy(args []string, errOut io.Writer) bool {
+	var daemonErr bytes.Buffer
+	if code := runDaemonStart(args, io.Discard, &daemonErr); code != 0 {
+		if daemonErr.Len() > 0 {
+			_, _ = io.WriteString(errOut, daemonErr.String())
+		}
 		return false
 	}
 	return true
@@ -249,7 +252,7 @@ func runDaemonStart(args []string, out io.Writer, errOut io.Writer) int {
 	}
 	defer func() { _ = logFile.Close() }()
 	prefix := daemonGlobalPrefixArgs(args)
-	cmdArgs := append(prefix, daemonName, "serve")
+	cmdArgs := append(prefix, daemonInternalCommand, daemonServeCommand)
 	cmd := exec.Command(os.Args[0], cmdArgs...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -367,10 +370,10 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 			_ = json.NewEncoder(w).Encode(daemonRunResponse{ExitCode: 2, Error: "missing args"})
 			return
 		}
-		if isDaemonCommand(req.Args) {
-			runner.logf("run:bad-request daemon-command")
+		if isDaemonInternalCommand(req.Args) {
+			runner.logf("run:bad-request internal-daemon-command")
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(daemonRunResponse{ExitCode: 2, Error: "daemon commands cannot run through daemon"})
+			_ = json.NewEncoder(w).Encode(daemonRunResponse{ExitCode: 2, Error: "daemon internal commands cannot run through daemon"})
 			return
 		}
 		if shouldRunAsync(req.Args) {
@@ -418,8 +421,6 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 		shutdown()
 	})
 
-	_, _ = fmt.Fprintf(out, "spogo daemon running on %s (pid %d)\n", state.Addr, state.PID)
-	_, _ = fmt.Fprintln(out, "keep this terminal open; use `spogo daemon stop` to stop")
 	err = server.Serve(listener)
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		_, _ = fmt.Fprintln(errOut, err)
@@ -523,9 +524,14 @@ func resolveDaemonConfigPath(args []string) (string, error) {
 	return configPath, nil
 }
 
-func daemonSubcommand(args []string) (string, int, bool) {
+func isDaemonInternalCommand(args []string) bool {
+	_, _, ok := daemonInternalSubcommand(args)
+	return ok
+}
+
+func daemonInternalSubcommand(args []string) (string, int, bool) {
 	cmd, idx, ok := firstCommandToken(args)
-	if !ok || !strings.EqualFold(cmd, daemonName) {
+	if !ok || !strings.EqualFold(cmd, daemonInternalCommand) {
 		return "", -1, false
 	}
 	if idx+1 >= len(args) {
