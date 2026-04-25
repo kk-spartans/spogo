@@ -18,8 +18,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -321,8 +323,17 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 		return 1
 	}
 	defer func() { _ = os.Remove(statePath) }()
+
+	daemonTTL, ttlErr := daemonTTLFromEnv()
 	runner := newDaemonRunner(errOut)
 	runner.logf("start addr=%s pid=%d goos=%s", state.Addr, state.PID, runtime.GOOS)
+	if ttlErr != nil {
+		runner.logf("idle-ttl invalid: %v (disabled)", ttlErr)
+		daemonTTL = 0
+	}
+	if daemonTTL > 0 {
+		runner.logf("idle-ttl=%s", daemonTTL)
+	}
 
 	mux := http.NewServeMux()
 	server := &http.Server{Handler: mux}
@@ -336,6 +347,43 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 			}()
 		})
 	}
+	lastActivity := func() atomic.Int64 {
+		value := atomic.Int64{}
+		value.Store(time.Now().UnixNano())
+		return value
+	}()
+	inFlightRuns := atomic.Int32{}
+	touchActivity := func() {
+		lastActivity.Store(time.Now().UnixNano())
+	}
+	startRun := func() {
+		inFlightRuns.Add(1)
+		touchActivity()
+	}
+	finishRun := func() {
+		touchActivity()
+		inFlightRuns.Add(-1)
+	}
+	if daemonTTL > 0 {
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				if inFlightRuns.Load() > 0 {
+					continue
+				}
+				last := lastActivity.Load()
+				if last == 0 {
+					continue
+				}
+				if time.Since(time.Unix(0, last)) >= daemonTTL {
+					runner.logf("idle-timeout reached (%s), shutting down", daemonTTL)
+					shutdown()
+					return
+				}
+			}
+		}()
+	}
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		runner.logf("http %s %s", r.Method, r.URL.Path)
@@ -347,6 +395,7 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		touchActivity()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "pid": state.PID})
 	})
@@ -362,6 +411,7 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		touchActivity()
 		defer func() { _ = r.Body.Close() }()
 		var req daemonRunRequest
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
@@ -385,7 +435,9 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 		if shouldRunAsync(req.Args) {
 			argsCopy := append([]string(nil), req.Args...)
 			runner.logf("run:async-queued args=%q", strings.Join(argsCopy, " "))
+			startRun()
 			go func() {
+				defer finishRun()
 				stdout := &bytes.Buffer{}
 				stderr := &bytes.Buffer{}
 				result := daemonAsyncResult{
@@ -400,6 +452,8 @@ func runDaemonServe(args []string, out io.Writer, errOut io.Writer) int {
 			_ = json.NewEncoder(w).Encode(daemonRunResponse{ExitCode: 0})
 			return
 		}
+		startRun()
+		defer finishRun()
 		stdout := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
 		exitCode := runner.run(req.Args, stdout, stderr)
@@ -664,6 +718,18 @@ func daemonAuthorized(req *http.Request, token string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+}
+
+func daemonTTLFromEnv() (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv("SPOGO_DAEMON_TTL"))
+	if raw == "" {
+		return 0, nil
+	}
+	seconds, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || seconds < 0 {
+		return 0, fmt.Errorf("SPOGO_DAEMON_TTL must be a non-negative integer (seconds), got %q", raw)
+	}
+	return time.Duration(seconds) * time.Second, nil
 }
 
 func daemonPing(state daemonState) error {

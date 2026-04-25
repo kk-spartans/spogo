@@ -74,6 +74,7 @@ Env overrides:
 
 - `SPOGO_TOTP_SECRET_URL` override TOTP secret source (http(s) or `file://...`)
 - `SPOGO_CONNECT_VERSION` override connect client version sent to playback endpoints
+- `SPOGO_DAEMON_TTL` daemon idle timeout in seconds on Windows (`0` = never auto-stop)
 
 Commands:
 
