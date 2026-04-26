@@ -144,7 +144,7 @@ spogo [global flags] <command> [args]
 - Overrides:
   - `SPOGO_TOTP_SECRET_URL` (http(s) or `file://...`)
   - `SPOGO_CONNECT_VERSION` (connect playback client version)
-  - `SPOGO_DAEMON_TTL` (Windows daemon idle timeout in seconds; `0` disables auto-stop)
+  - `SPOGO_DAEMON_TTL` (daemon idle timeout in seconds on all platforms; `0` disables auto-stop)
 
 ## Examples
 

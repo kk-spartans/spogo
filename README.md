@@ -74,7 +74,9 @@ Env overrides:
 
 - `SPOGO_TOTP_SECRET_URL` override TOTP secret source (http(s) or `file://...`)
 - `SPOGO_CONNECT_VERSION` override connect client version sent to playback endpoints
-- `SPOGO_DAEMON_TTL` daemon idle timeout in seconds on Windows (`0` = never auto-stop)
+- `SPOGO_DAEMON_TTL` daemon idle timeout in seconds on all platforms (`0` = never auto-stop)
+
+Daemon behavior is the same on macOS, Linux, and Windows: `spogo` auto-starts a background daemon for normal commands, reuses warm contexts between invocations, and honors `--timeout` plus `SPOGO_DAEMON_TTL` everywhere.
 
 Commands:
 
