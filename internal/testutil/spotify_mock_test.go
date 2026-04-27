@@ -18,6 +18,7 @@ func TestSpotifyMockAllMethods(t *testing.T) {
 		GetPlaylistFn:     func(context.Context, string) (spotify.Item, error) { return spotify.Item{}, nil },
 		GetShowFn:         func(context.Context, string) (spotify.Item, error) { return spotify.Item{}, nil },
 		GetEpisodeFn:      func(context.Context, string) (spotify.Item, error) { return spotify.Item{}, nil },
+		ArtistTopTracksFn: func(context.Context, string, int) ([]spotify.Item, error) { return nil, nil },
 		PlaybackFn:        func(context.Context) (spotify.PlaybackStatus, error) { return spotify.PlaybackStatus{}, nil },
 		PlayFn:            func(context.Context, string) error { return nil },
 		PauseFn:           func(context.Context) error { return nil },
@@ -49,6 +50,7 @@ func TestSpotifyMockAllMethods(t *testing.T) {
 	_, _ = m.GetPlaylist(context.Background(), "1")
 	_, _ = m.GetShow(context.Background(), "1")
 	_, _ = m.GetEpisode(context.Background(), "1")
+	_, _ = m.ArtistTopTracks(context.Background(), "1", 10)
 	_, _ = m.Playback(context.Background())
 	_ = m.Play(context.Background(), "uri")
 	_ = m.Pause(context.Background())
@@ -83,6 +85,9 @@ func TestSpotifyMockNotImplemented(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 	if _, err := m.GetTrack(context.Background(), "1"); err == nil {
+		t.Fatalf("expected error")
+	}
+	if _, err := m.ArtistTopTracks(context.Background(), "1", 10); err == nil {
 		t.Fatalf("expected error")
 	}
 	if err := m.Pause(context.Background()); err == nil {
