@@ -8,8 +8,8 @@ require (
 	github.com/daixiang0/gci v0.13.7
 	github.com/fatih/color v1.19.0
 	github.com/mattn/go-isatty v0.0.22
-	github.com/pelletier/go-toml/v2 v2.3.0
-	github.com/steipete/sweetcookie v0.0.0-20260102214724-68ec5a0bced4
+	github.com/pelletier/go-toml/v2 v2.3.1
+	github.com/steipete/sweetcookie v0.0.0-20260427094007-8d5619cc372e
 	mvdan.cc/gofumpt v0.9.2
 )
 
