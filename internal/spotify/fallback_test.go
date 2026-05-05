@@ -15,6 +15,8 @@ type apiStub struct {
 	libraryModifyFn   func(context.Context, string, []string, string) error
 	followedArtistsFn func(context.Context, int, string) ([]Item, int, string, error)
 	artistTopTracksFn func(context.Context, string, int) ([]Item, error)
+	addTracksFn       func(context.Context, string, []string) error
+	removeTracksFn    func(context.Context, string, []string) error
 }
 
 func (a apiStub) Search(ctx context.Context, kind, query string, limit, offset int) (SearchResult, error) {
@@ -186,13 +188,19 @@ func (a apiStub) CreatePlaylist(context.Context, string, bool, bool) (Item, erro
 	return Item{}, nil
 }
 
-func (a apiStub) AddTracks(context.Context, string, []string) error {
+func (a apiStub) AddTracks(ctx context.Context, playlistID string, uris []string) error {
 	a.note("AddTracks")
+	if a.addTracksFn != nil {
+		return a.addTracksFn(ctx, playlistID, uris)
+	}
 	return nil
 }
 
-func (a apiStub) RemoveTracks(context.Context, string, []string) error {
+func (a apiStub) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {
 	a.note("RemoveTracks")
+	if a.removeTracksFn != nil {
+		return a.removeTracksFn(ctx, playlistID, uris)
+	}
 	return nil
 }
 
@@ -327,6 +335,31 @@ func TestFallbackPauseOnRateLimit(t *testing.T) {
 	}
 	if webCalls != 1 || connectCalls != 1 {
 		t.Fatalf("unexpected call counts web=%d connect=%d", webCalls, connectCalls)
+	}
+}
+
+func TestFallbackPlaylistWritesOnRateLimit(t *testing.T) {
+	ctx := context.Background()
+	calls := map[string]int{}
+	web := apiStub{
+		calls: calls,
+		addTracksFn: func(context.Context, string, []string) error {
+			return APIError{Status: 429, Message: "rate limit"}
+		},
+		removeTracksFn: func(context.Context, string, []string) error {
+			return APIError{Status: 429, Message: "rate limit"}
+		},
+	}
+	connect := apiStub{calls: calls}
+	client := NewPlaybackFallbackClient(web, connect)
+	if err := client.AddTracks(ctx, "p1", []string{"spotify:track:t1"}); err != nil {
+		t.Fatalf("add tracks: %v", err)
+	}
+	if err := client.RemoveTracks(ctx, "p1", []string{"spotify:track:t1"}); err != nil {
+		t.Fatalf("remove tracks: %v", err)
+	}
+	if calls["AddTracks"] != 2 || calls["RemoveTracks"] != 2 {
+		t.Fatalf("unexpected calls: %#v", calls)
 	}
 }
 

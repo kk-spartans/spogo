@@ -81,6 +81,9 @@ func (c *Context) newAppleScriptClient(source cookies.Source) (spotify.API, erro
 	var fallback spotify.API
 	if webClient, webErr := c.newWebClient(source); webErr == nil {
 		fallback = webClient
+		if connectClient, connectErr := c.newConnectClient(source); connectErr == nil {
+			fallback = spotify.NewPlaybackFallbackClient(webClient, connectClient)
+		}
 	}
 	return spotify.NewAppleScriptClient(spotify.AppleScriptOptions{Fallback: fallback})
 }

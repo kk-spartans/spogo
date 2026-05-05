@@ -208,9 +208,13 @@ func (c *fallbackClient) CreatePlaylist(ctx context.Context, name string, public
 }
 
 func (c *fallbackClient) AddTracks(ctx context.Context, playlistID string, uris []string) error {
-	return c.web.AddTracks(ctx, playlistID, uris)
+	return fallbackVoid(c, true, func(api API) error {
+		return api.AddTracks(ctx, playlistID, uris)
+	})
 }
 
 func (c *fallbackClient) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {
-	return c.web.RemoveTracks(ctx, playlistID, uris)
+	return fallbackVoid(c, true, func(api API) error {
+		return api.RemoveTracks(ctx, playlistID, uris)
+	})
 }
