@@ -225,6 +225,99 @@ func TestSetSpotify(t *testing.T) {
 	}
 }
 
+func TestCommandContextFallbacks(t *testing.T) {
+	var nilCtx *Context
+	if nilCtx.CommandContext() == nil {
+		t.Fatalf("expected background context for nil app context")
+	}
+
+	ctx := &Context{}
+	if ctx.CommandContext() == nil {
+		t.Fatalf("expected background context for empty app context")
+	}
+}
+
+func TestSetCommandContext(t *testing.T) {
+	ctx := &Context{}
+	cmdCtx, cancel := context.WithCancel(context.Background())
+	ctx.SetCommandContext(cmdCtx)
+	cancel()
+
+	select {
+	case <-ctx.CommandContext().Done():
+	default:
+		t.Fatalf("expected stored command context")
+	}
+
+	var nilContext context.Context
+	ctx.SetCommandContext(nilContext)
+	if ctx.CommandContext() == nil {
+		t.Fatalf("expected background context after nil reset")
+	}
+
+	var nilCtx *Context
+	nilCtx.SetCommandContext(cmdCtx)
+}
+
+func TestNewContextAppliesRequestedProfileAndSettings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	cfg := config.Default()
+	cfg.SetProfile("work", config.Profile{
+		Market:   "US",
+		Language: "en",
+		Device:   "speaker",
+		Engine:   "web",
+	})
+	if err := config.Save(path, cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	ctx, err := NewContext(Settings{
+		ConfigPath: path,
+		Profile:    "work",
+		Market:     "DE",
+		Language:   "de",
+		Device:     "desktop",
+		Engine:     "auto",
+		Format:     output.FormatPlain,
+	})
+	if err != nil {
+		t.Fatalf("new context: %v", err)
+	}
+	if ctx.ProfileKey != "work" {
+		t.Fatalf("profile key: %s", ctx.ProfileKey)
+	}
+	if ctx.Profile.Market != "DE" || ctx.Profile.Language != "de" || ctx.Profile.Device != "desktop" || ctx.Profile.Engine != "auto" {
+		t.Fatalf("profile overrides not applied: %+v", ctx.Profile)
+	}
+}
+
+func TestResolveProfileKeyFallbacks(t *testing.T) {
+	if got := resolveProfileKey(nil, "work"); got != "work" {
+		t.Fatalf("requested profile: %s", got)
+	}
+	if got := resolveProfileKey(&config.Config{DefaultProfile: "primary"}, ""); got != "primary" {
+		t.Fatalf("default profile: %s", got)
+	}
+	if got := resolveProfileKey(nil, ""); got != config.DefaultProfile {
+		t.Fatalf("fallback profile: %s", got)
+	}
+}
+
+func TestApplySettingsKeepsEmptyValues(t *testing.T) {
+	profile := applySettings(config.Profile{
+		Market:   "US",
+		Language: "en",
+		Device:   "speaker",
+		Engine:   "web",
+	}, Settings{})
+
+	if profile.Market != "US" || profile.Language != "en" || profile.Device != "speaker" || profile.Engine != "web" {
+		t.Fatalf("profile changed unexpectedly: %+v", profile)
+	}
+}
+
 func TestValidateProfileOK(t *testing.T) {
 	ctx := &Context{Profile: config.Profile{Market: "US"}}
 	if err := ctx.ValidateProfile(); err != nil {

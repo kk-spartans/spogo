@@ -198,12 +198,22 @@ func (c *ConnectClient) CreatePlaylist(ctx context.Context, name string, public,
 }
 
 func (c *ConnectClient) AddTracks(ctx context.Context, playlistID string, uris []string) error {
+	if err := c.addTracks(ctx, playlistID, uris); err == nil {
+		return nil
+	} else if errors.Is(err, errPlaylistNotWritable) {
+		return err
+	}
 	return withWebFallback(c, func(web *Client) error {
 		return web.AddTracks(ctx, playlistID, uris)
 	})
 }
 
 func (c *ConnectClient) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {
+	if err := c.removeTracks(ctx, playlistID, uris); err == nil {
+		return nil
+	} else if errors.Is(err, errPlaylistNotWritable) {
+		return err
+	}
 	return withWebFallback(c, func(web *Client) error {
 		return web.RemoveTracks(ctx, playlistID, uris)
 	})

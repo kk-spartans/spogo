@@ -10,7 +10,13 @@ import (
 
 func (c *ConnectClient) playback(ctx context.Context) (PlaybackStatus, error) {
 	return withConnectState(ctx, c, func(state connectState) (PlaybackStatus, error) {
-		return mapPlaybackStatus(state), nil
+		status := mapPlaybackStatus(state)
+		if itemNeedsTrackMetadata(status.Item) {
+			if full, err := c.trackInfo(ctx, status.Item.ID); err == nil {
+				mergeItemMetadata(status.Item, full)
+			}
+		}
+		return status, nil
 	})
 }
 
@@ -42,10 +48,25 @@ func (c *ConnectClient) transferViaWebAPI(ctx context.Context, deviceID string) 
 }
 
 func (c *ConnectClient) play(ctx context.Context, uri string) error {
-	if uri == "" {
-		return c.sendDirectCommand(ctx, "resume", nil)
-	}
-	return c.sendDirectCommand(ctx, "play", playCommandPayload(uri))
+	return withConnectStateErr(ctx, c, func(state connectState) error {
+		if state.activeDeviceID == "" {
+			if targetID := resolveConnectTargetDeviceID(state, c.device); targetID != "" {
+				state.activeDeviceID = targetID
+			} else {
+				return c.playViaWebAPI(ctx, uri)
+			}
+		}
+		if uri == "" {
+			return c.sendPlayerCommand(ctx, state, "resume", nil)
+		}
+		return c.sendPlayerCommand(ctx, state, "play", playCommandPayload(uri))
+	})
+}
+
+func (c *ConnectClient) playViaWebAPI(ctx context.Context, uri string) error {
+	return withWebFallback(c, func(web *Client) error {
+		return web.Play(ctx, uri)
+	})
 }
 
 func (c *ConnectClient) pause(ctx context.Context) error {
@@ -82,7 +103,8 @@ func (c *ConnectClient) volume(ctx context.Context, volume int) error {
 		if fromID == "" || state.activeDeviceID == "" {
 			return errors.New("missing device id")
 		}
-		return c.sendConnectCommand(ctx, fmt.Sprintf("%s/connect/volume/from/%s/to/%s", connectStateBase, fromID, state.activeDeviceID), map[string]any{
+		url := fmt.Sprintf("%s/connect/volume/from/%s/to/%s", connectStateBase, fromID, state.activeDeviceID)
+		return c.sendConnectRequest(ctx, http.MethodPut, url, map[string]any{
 			"volume": int(float64(volume) / 100 * 65535),
 		})
 	})
@@ -202,6 +224,19 @@ func connectTransferSourceID(state connectState) string {
 		fromID = state.activeDeviceID
 	}
 	return fromID
+}
+
+func resolveConnectTargetDeviceID(state connectState, selector string) string {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return ""
+	}
+	for _, device := range mapDevices(state) {
+		if strings.EqualFold(device.ID, selector) || strings.EqualFold(device.Name, selector) {
+			return device.ID
+		}
+	}
+	return ""
 }
 
 func playCommandPayload(uri string) map[string]any {

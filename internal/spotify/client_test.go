@@ -84,11 +84,74 @@ func TestPlaybackNoContent(t *testing.T) {
 
 func TestPlaybackWithItem(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/me/player":
+			payload := playbackResponse{
+				IsPlaying:  true,
+				ProgressMS: 1000,
+				Device:     deviceItem{Name: "Desk"},
+				Item:       trackItem{ID: "t1", Name: "Song", Artists: []artistRef{{Name: "Artist"}}},
+			}
+			_ = json.NewEncoder(w).Encode(payload)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	client, closeFn := newTestClient(t, handler)
+	defer closeFn()
+	status, err := client.Playback(context.Background())
+	if err != nil {
+		t.Fatalf("playback: %v", err)
+	}
+	if status.Item == nil || status.Item.Name != "Song" {
+		t.Fatalf("expected item")
+	}
+}
+
+func TestPlaybackHydratesSparseItem(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/me/player":
+			payload := playbackResponse{
+				IsPlaying: true,
+				Item:      trackItem{ID: "t1", URI: "spotify:track:t1", Name: "Song"},
+			}
+			_ = json.NewEncoder(w).Encode(payload)
+		case "/tracks/t1":
+			payload := trackItem{
+				ID:      "t1",
+				URI:     "spotify:track:t1",
+				Name:    "Song",
+				Album:   albumRef{Name: "Album"},
+				Artists: []artistRef{{Name: "Artist"}},
+			}
+			_ = json.NewEncoder(w).Encode(payload)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	client, closeFn := newTestClient(t, handler)
+	defer closeFn()
+	status, err := client.Playback(context.Background())
+	if err != nil {
+		t.Fatalf("playback: %v", err)
+	}
+	if status.Item == nil || len(status.Item.Artists) != 1 || status.Item.Artists[0] != "Artist" || status.Item.Album != "Album" {
+		t.Fatalf("expected hydrated item: %#v", status.Item)
+	}
+}
+
+func TestPlaybackKeepsSparseItemWhenHydrationFails(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/me/player" {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
 		payload := playbackResponse{
 			IsPlaying:  true,
 			ProgressMS: 1000,
 			Device:     deviceItem{Name: "Desk"},
-			Item:       trackItem{ID: "t1", Name: "Song", Artists: []artistRef{{Name: "Artist"}}},
+			Item:       trackItem{ID: "t1", URI: "spotify:track:t1", Name: "Song"},
 		}
 		_ = json.NewEncoder(w).Encode(payload)
 	})

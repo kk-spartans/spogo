@@ -23,6 +23,93 @@ func TestExtractItem(t *testing.T) {
 	}
 }
 
+func TestExtractFetchLibraryTracks(t *testing.T) {
+	payload := map[string]any{
+		"data": map[string]any{"me": map[string]any{"library": map[string]any{"tracks": map[string]any{
+			"totalCount": 2,
+			"items": []any{
+				map[string]any{"track": map[string]any{
+					"_uri": "spotify:track:t1",
+					"data": map[string]any{"name": "Song One"},
+				}},
+				map[string]any{"track": map[string]any{
+					"_uri": "spotify:track:t2",
+					"data": map[string]any{"name": "Song Two"},
+				}},
+			},
+		}}}},
+	}
+	items, total, err := extractFetchLibraryTracks(payload)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d (total %d)", len(items), total)
+	}
+	if items[0].ID != "t1" || items[0].Name != "Song One" {
+		t.Fatalf("unexpected first item: %#v", items[0])
+	}
+	if items[1].ID != "t2" || items[1].Name != "Song Two" {
+		t.Fatalf("unexpected second item: %#v", items[1])
+	}
+}
+
+func TestExtractFetchLibraryTracksDedupes(t *testing.T) {
+	payload := map[string]any{
+		"data": map[string]any{"me": map[string]any{"library": map[string]any{"tracks": map[string]any{
+			"totalCount": 1,
+			"items": []any{
+				map[string]any{"track": map[string]any{
+					"_uri": "spotify:track:t1",
+					"data": map[string]any{"name": "Song"},
+				}},
+				map[string]any{"track": map[string]any{
+					"_uri": "spotify:track:t1",
+					"data": map[string]any{"name": "Song"},
+				}},
+			},
+		}}}},
+	}
+	items, _, err := extractFetchLibraryTracks(payload)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 deduped item, got %d", len(items))
+	}
+}
+
+func TestExtractFetchLibraryTracksMissingPath(t *testing.T) {
+	items, total, err := extractFetchLibraryTracks(map[string]any{})
+	if err == nil {
+		t.Fatalf("expected error, got %d items (total %d)", len(items), total)
+	}
+}
+
+func TestExtractFetchLibraryTracksSkipsMalformed(t *testing.T) {
+	payload := map[string]any{
+		"data": map[string]any{"me": map[string]any{"library": map[string]any{"tracks": map[string]any{
+			"totalCount": 0,
+			"items": []any{
+				"not a map",
+				map[string]any{"track": "not a map"},
+				map[string]any{"track": map[string]any{"_uri": "spotify:track:t1"}},
+				map[string]any{"track": map[string]any{
+					"_uri": "spotify:track:t2",
+					"data": map[string]any{"name": "Valid"},
+				}},
+			},
+		}}}},
+	}
+	items, _, err := extractFetchLibraryTracks(payload)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "t2" {
+		t.Fatalf("expected 1 valid item, got %#v", items)
+	}
+}
+
 func TestSearchPaths(t *testing.T) {
 	paths := searchPaths("track")
 	if len(paths) == 0 {
@@ -142,6 +229,70 @@ func TestExtractItemOtherArtistsItems(t *testing.T) {
 	}
 	if len(item.Artists) != 2 || item.Artists[0] != "Artist One" || item.Artists[1] != "Artist Two" {
 		t.Fatalf("unexpected artists: %#v", item.Artists)
+	}
+}
+
+func TestExtractSearchTrackItemNestedArtists(t *testing.T) {
+	payload := map[string]any{
+		"data": map[string]any{
+			"searchV2": map[string]any{
+				"tracksV2": map[string]any{
+					"totalCount": 1,
+					"items": []any{
+						map[string]any{
+							"item": map[string]any{
+								"data": map[string]any{
+									"uri":  "spotify:track:abc",
+									"name": "Song",
+									"artists": map[string]any{
+										"items": []any{
+											map[string]any{"profile": map[string]any{"name": "Artist"}},
+										},
+									},
+									"albumOfTrack": map[string]any{"name": "Album"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	items, total := extractSearchItems(payload, "track")
+	if total != 1 || len(items) != 1 {
+		t.Fatalf("unexpected items: %#v total=%d", items, total)
+	}
+	if len(items[0].Artists) != 1 || items[0].Artists[0] != "Artist" || items[0].Album != "Album" {
+		t.Fatalf("unexpected metadata: %#v", items[0])
+	}
+}
+
+func TestExtractPlaylistDoesNotLeakNestedTrackAlbum(t *testing.T) {
+	payload := map[string]any{
+		"data": map[string]any{
+			"playlistV2": map[string]any{
+				"uri":  "spotify:playlist:p1",
+				"name": "Playlist",
+				"content": map[string]any{
+					"items": []any{
+						map[string]any{"itemV2": map[string]any{"data": map[string]any{
+							"track": map[string]any{
+								"uri":   "spotify:track:t1",
+								"name":  "Song",
+								"album": map[string]any{"name": "Album"},
+							},
+						}}},
+					},
+				},
+			},
+		},
+	}
+	item, ok := extractItemFromPayload(payload, "playlist")
+	if !ok {
+		t.Fatalf("expected playlist")
+	}
+	if item.Album != "" {
+		t.Fatalf("playlist leaked album metadata: %#v", item)
 	}
 }
 
