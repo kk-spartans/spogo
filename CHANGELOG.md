@@ -7,6 +7,9 @@
 - Fix Connect track artist extraction for nested artist containers and minimal artist fragments (`#7`, thanks @joelbdavies)
 - Fix silent `auth import` failures by retrying Spotify auth cookie lookup across related hosts and surfacing browser warnings (`#13`)
 - Fix `device set` when Connect state has no origin device by falling back to Web API transfer (`#8`)
+- Fix Connect liked-track listing via `fetchLibraryTracks` with Web API fallback on payload drift (`#16`, thanks @masonc15)
+- Fix Connect play when no device is active by falling back to Web API playback (`#21`, thanks @prashanthbala)
+- Fix Connect volume changes by sending the volume endpoint as `PUT` (`#24`, thanks @cavit99)
 
 ## 0.3.0 - 2026-03-08
 
