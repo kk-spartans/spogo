@@ -194,6 +194,61 @@ func TestConnectAddTracksRejectsNonWritablePlaylist(t *testing.T) {
 	}
 }
 
+func TestPlaylistTrackUIDExtractionVariants(t *testing.T) {
+	need := map[string]int{
+		"spotify:track:direct": 1,
+		"spotify:track:nested": 1,
+		"spotify:track:deep":   1,
+	}
+	uids, total := extractPlaylistTrackUIDs(map[string]any{
+		"data": map[string]any{"playlistV2": map[string]any{"content": map[string]any{
+			"totalCount": 3,
+			"items": []any{
+				map[string]any{"uid": "uid-direct", "itemV2": map[string]any{
+					"data": map[string]any{"uri": "spotify:track:direct"},
+				}},
+				map[string]any{"itemV2": map[string]any{
+					"uid":  "uid-nested",
+					"data": map[string]any{"track": map[string]any{"uri": "spotify:track:nested"}},
+				}},
+				map[string]any{"itemV2": map[string]any{
+					"uid":  "uid-deep",
+					"data": map[string]any{"wrapper": map[string]any{"uri": "spotify:track:deep"}},
+				}},
+			},
+		}}},
+	}, need)
+	if total != 3 {
+		t.Fatalf("total = %d", total)
+	}
+	if len(uids) != 3 || uids[0] != "uid-direct" || uids[1] != "uid-nested" || uids[2] != "uid-deep" {
+		t.Fatalf("uids = %#v", uids)
+	}
+}
+
+func TestConnectRemoveTracksRequiresTrackURI(t *testing.T) {
+	client := newConnectClientForTests(roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Query().Get("operationName") == "playlistPermissions" {
+			return jsonResponse(http.StatusOK, playlistWritablePayload(true)), nil
+		}
+		return textResponse(http.StatusNotFound, "missing"), nil
+	}))
+	client.hashes.hashes["playlistPermissions"] = "hash"
+	if err := client.removeTracks(context.Background(), "p1", nil); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestEnsurePlaylistWritableRequiresCapabilities(t *testing.T) {
+	client := newConnectClientForTests(roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, map[string]any{"data": map[string]any{"playlistV2": map[string]any{}}}), nil
+	}))
+	client.hashes.hashes["playlistPermissions"] = "hash"
+	if err := client.ensurePlaylistWritable(context.Background(), "p1"); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
 func playlistWritablePayload(writable bool) map[string]any {
 	return map[string]any{
 		"data": map[string]any{"playlistV2": map[string]any{
