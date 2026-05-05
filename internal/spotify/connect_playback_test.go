@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -214,7 +215,7 @@ func TestConnectPlayFallsBackToWebAPIWithoutActiveDevice(t *testing.T) {
 			return textResponse(http.StatusNoContent, ""), nil
 		case req.Method == http.MethodPost:
 			t.Fatalf("unexpected connect command: %s", req.URL.Path)
-			return nil, nil
+			return nil, errors.New("unexpected connect command")
 		default:
 			return textResponse(http.StatusNotFound, "missing"), nil
 		}
