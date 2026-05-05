@@ -10,7 +10,13 @@ import (
 
 func (c *ConnectClient) playback(ctx context.Context) (PlaybackStatus, error) {
 	return withConnectState(ctx, c, func(state connectState) (PlaybackStatus, error) {
-		return mapPlaybackStatus(state), nil
+		status := mapPlaybackStatus(state)
+		if itemNeedsTrackMetadata(status.Item) {
+			if full, err := c.trackInfo(ctx, status.Item.ID); err == nil {
+				mergeItemMetadata(status.Item, full)
+			}
+		}
+		return status, nil
 	})
 }
 
@@ -44,7 +50,11 @@ func (c *ConnectClient) transferViaWebAPI(ctx context.Context, deviceID string) 
 func (c *ConnectClient) play(ctx context.Context, uri string) error {
 	return withConnectStateErr(ctx, c, func(state connectState) error {
 		if state.activeDeviceID == "" {
-			return c.playViaWebAPI(ctx, uri)
+			if targetID := resolveConnectTargetDeviceID(state, c.device); targetID != "" {
+				state.activeDeviceID = targetID
+			} else {
+				return c.playViaWebAPI(ctx, uri)
+			}
 		}
 		if uri == "" {
 			return c.sendPlayerCommand(ctx, state, "resume", nil)
@@ -173,6 +183,19 @@ func connectTransferSourceID(state connectState) string {
 		fromID = state.activeDeviceID
 	}
 	return fromID
+}
+
+func resolveConnectTargetDeviceID(state connectState, selector string) string {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return ""
+	}
+	for _, device := range mapDevices(state) {
+		if strings.EqualFold(device.ID, selector) || strings.EqualFold(device.Name, selector) {
+			return device.ID
+		}
+	}
+	return ""
 }
 
 func playCommandPayload(uri string) map[string]any {

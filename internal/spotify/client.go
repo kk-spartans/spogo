@@ -176,6 +176,11 @@ func (c *Client) Playback(ctx context.Context) (PlaybackStatus, error) {
 	if raw.Item.ID != "" {
 		item := mapTrack(raw.Item)
 		status.Item = &item
+		if itemNeedsTrackMetadata(status.Item) {
+			if full, err := c.GetTrack(ctx, status.Item.ID); err == nil {
+				mergeItemMetadata(status.Item, full)
+			}
+		}
 	}
 	return status, nil
 }

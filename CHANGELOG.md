@@ -10,6 +10,9 @@
 - Fix Connect liked-track listing via `fetchLibraryTracks` with Web API fallback on payload drift (`#16`, thanks @masonc15)
 - Fix Connect play when no device is active by falling back to Web API playback (`#21`, thanks @prashanthbala)
 - Fix Connect volume changes by sending the volume endpoint as `PUT` (`#24`, thanks @cavit99)
+- Fix sparse status/search metadata so track artists and albums are populated consistently across engines.
+- Fix Connect `--device` playback when no device is active without falling back to rate-limited Web API playback.
+- Fix `auth paste --no-input` by accepting the documented flag order.
 
 ## 0.3.0 - 2026-03-08
 

@@ -60,6 +60,19 @@ func appendArtistNames(artists *[]string, entries []any) {
 	}
 }
 
+func findFirstArtistNames(value any) []string {
+	var artists []string
+	walkMap(value, func(m map[string]any) {
+		if len(artists) > 0 {
+			return
+		}
+		if found := extractArtistNames(m); len(found) > 0 {
+			artists = found
+		}
+	})
+	return artists
+}
+
 func artistNameFromValue(value any) string {
 	m, ok := value.(map[string]any)
 	if !ok {

@@ -108,6 +108,48 @@ func TestConnectPlaybackCommands(t *testing.T) {
 	}
 }
 
+func TestConnectPlaybackHydratesSparseTrack(t *testing.T) {
+	statePayload := map[string]any{
+		"devices": map[string]any{
+			"device-1": map[string]any{"name": "Desk", "device_type": "computer"},
+		},
+		"player_state": map[string]any{
+			"is_paused": true,
+			"track": map[string]any{
+				"uri":  "spotify:track:t1",
+				"name": "Song",
+			},
+		},
+		"active_device_id": "device-1",
+	}
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/devices/hobs_"):
+			return jsonResponse(http.StatusOK, statePayload), nil
+		case req.URL.Query().Get("operationName") == "getTrack":
+			return jsonResponse(http.StatusOK, map[string]any{
+				"data": map[string]any{"track": map[string]any{
+					"uri":     "spotify:track:t1",
+					"name":    "Song",
+					"artists": []any{map[string]any{"name": "Artist"}},
+					"album":   map[string]any{"name": "Album"},
+				}},
+			}), nil
+		default:
+			return textResponse(http.StatusNotFound, "missing"), nil
+		}
+	})
+	client := newRegisteredConnectClientForTests(transport)
+	client.hashes.hashes["getTrack"] = "hash"
+	status, err := client.Playback(context.Background())
+	if err != nil {
+		t.Fatalf("playback: %v", err)
+	}
+	if status.Item == nil || len(status.Item.Artists) != 1 || status.Item.Artists[0] != "Artist" || status.Item.Album != "Album" {
+		t.Fatalf("expected hydrated item: %#v", status.Item)
+	}
+}
+
 func TestConnectPlaybackActiveDeviceFromDevices(t *testing.T) {
 	statePayload := map[string]any{
 		"devices": map[string]any{
@@ -235,6 +277,44 @@ func TestConnectPlayFallsBackToWebAPIWithoutActiveDevice(t *testing.T) {
 	}
 	if !sawWebPlay {
 		t.Fatalf("expected web play fallback")
+	}
+}
+
+func TestConnectPlayUsesConfiguredDeviceWithoutActiveDevice(t *testing.T) {
+	statePayload := map[string]any{
+		"devices": map[string]any{
+			"device-1": map[string]any{
+				"name":        "Desk",
+				"device_type": "computer",
+			},
+		},
+		"player_state": map[string]any{
+			"is_paused": true,
+		},
+	}
+	var sawConnectPlay bool
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/devices/hobs_"):
+			return jsonResponse(http.StatusOK, statePayload), nil
+		case req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/player/command/from/device/to/device-1"):
+			sawConnectPlay = true
+			return textResponse(http.StatusOK, "ok"), nil
+		case req.Method == http.MethodPut && req.URL.Path == "/v1/me/player/play":
+			t.Fatalf("unexpected web play fallback")
+			return nil, errors.New("unexpected web play fallback")
+		default:
+			return textResponse(http.StatusNotFound, "missing"), nil
+		}
+	})
+	client := newRegisteredConnectClientForTests(transport)
+	client.device = "Desk"
+
+	if err := client.Play(context.Background(), "spotify:track:abc"); err != nil {
+		t.Fatalf("play: %v", err)
+	}
+	if !sawConnectPlay {
+		t.Fatalf("expected connect play")
 	}
 }
 

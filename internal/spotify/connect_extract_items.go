@@ -69,8 +69,13 @@ func extractItem(value any, kind string) (Item, bool) {
 	}
 	item.URL = fmt.Sprintf("https://open.spotify.com/%s/%s", item.Type, item.ID)
 	item.Artists = extractArtistNames(m)
-	if album := extractAlbumName(m); album != "" {
-		item.Album = album
+	if len(item.Artists) == 0 && item.Type == "track" {
+		item.Artists = findFirstArtistNames(m)
+	}
+	if item.Type == "track" {
+		if album := extractAlbumName(m); album != "" {
+			item.Album = album
+		}
 	}
 	item.Explicit = getBool(m, "explicit")
 	item.DurationMS = getInt(m, "duration_ms")

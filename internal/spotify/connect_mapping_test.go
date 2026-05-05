@@ -232,6 +232,70 @@ func TestExtractItemOtherArtistsItems(t *testing.T) {
 	}
 }
 
+func TestExtractSearchTrackItemNestedArtists(t *testing.T) {
+	payload := map[string]any{
+		"data": map[string]any{
+			"searchV2": map[string]any{
+				"tracksV2": map[string]any{
+					"totalCount": 1,
+					"items": []any{
+						map[string]any{
+							"item": map[string]any{
+								"data": map[string]any{
+									"uri":  "spotify:track:abc",
+									"name": "Song",
+									"artists": map[string]any{
+										"items": []any{
+											map[string]any{"profile": map[string]any{"name": "Artist"}},
+										},
+									},
+									"albumOfTrack": map[string]any{"name": "Album"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	items, total := extractSearchItems(payload, "track")
+	if total != 1 || len(items) != 1 {
+		t.Fatalf("unexpected items: %#v total=%d", items, total)
+	}
+	if len(items[0].Artists) != 1 || items[0].Artists[0] != "Artist" || items[0].Album != "Album" {
+		t.Fatalf("unexpected metadata: %#v", items[0])
+	}
+}
+
+func TestExtractPlaylistDoesNotLeakNestedTrackAlbum(t *testing.T) {
+	payload := map[string]any{
+		"data": map[string]any{
+			"playlistV2": map[string]any{
+				"uri":  "spotify:playlist:p1",
+				"name": "Playlist",
+				"content": map[string]any{
+					"items": []any{
+						map[string]any{"itemV2": map[string]any{"data": map[string]any{
+							"track": map[string]any{
+								"uri":   "spotify:track:t1",
+								"name":  "Song",
+								"album": map[string]any{"name": "Album"},
+							},
+						}}},
+					},
+				},
+			},
+		},
+	}
+	item, ok := extractItemFromPayload(payload, "playlist")
+	if !ok {
+		t.Fatalf("expected playlist")
+	}
+	if item.Album != "" {
+		t.Fatalf("playlist leaked album metadata: %#v", item)
+	}
+}
+
 func TestExtractItemFromPayloadPrefersTrackUnion(t *testing.T) {
 	payload := map[string]any{
 		"data": map[string]any{

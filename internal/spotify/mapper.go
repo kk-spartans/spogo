@@ -150,3 +150,49 @@ func externalURL(urls map[string]string) string {
 	}
 	return ""
 }
+
+func itemNeedsTrackMetadata(item *Item) bool {
+	if item == nil || item.ID == "" {
+		return false
+	}
+	if item.Type != "" && item.Type != "track" {
+		return false
+	}
+	return item.Name == "" || len(item.Artists) == 0 || item.Album == ""
+}
+
+func mergeItemMetadata(dst *Item, src Item) {
+	if dst == nil {
+		return
+	}
+	if dst.ID == "" {
+		dst.ID = src.ID
+	}
+	if dst.URI == "" {
+		dst.URI = src.URI
+	}
+	if dst.Name == "" {
+		dst.Name = src.Name
+	}
+	if dst.Type == "" {
+		dst.Type = src.Type
+	}
+	if dst.URL == "" {
+		dst.URL = src.URL
+	}
+	if len(dst.Artists) == 0 {
+		dst.Artists = src.Artists
+	}
+	if dst.Album == "" {
+		dst.Album = src.Album
+	}
+	if dst.DurationMS == 0 {
+		dst.DurationMS = src.DurationMS
+	}
+	if !dst.Explicit {
+		dst.Explicit = src.Explicit
+	}
+	if !dst.IsPlayable {
+		dst.IsPlayable = src.IsPlayable
+	}
+}
