@@ -207,11 +207,15 @@ func (c *ConnectClient) sendPlayerCommand(ctx context.Context, state connectStat
 }
 
 func (c *ConnectClient) sendConnectCommand(ctx context.Context, url string, payload map[string]any) error {
+	return c.sendConnectRequest(ctx, http.MethodPost, url, payload)
+}
+
+func (c *ConnectClient) sendConnectRequest(ctx context.Context, method, url string, payload map[string]any) error {
 	auth, err := c.session.auth(ctx)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, encodeJSON(payload))
+	req, err := http.NewRequestWithContext(ctx, method, url, encodeJSON(payload))
 	if err != nil {
 		return err
 	}

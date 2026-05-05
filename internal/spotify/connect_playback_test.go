@@ -32,6 +32,11 @@ func TestConnectPlaybackCommands(t *testing.T) {
 		switch {
 		case req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/devices/hobs_"):
 			return jsonResponse(http.StatusOK, statePayload), nil
+		case strings.Contains(req.URL.Path, "/connect/volume/"):
+			if req.Method != http.MethodPut {
+				return textResponse(http.StatusMethodNotAllowed, "method not allowed"), nil
+			}
+			return textResponse(http.StatusOK, "ok"), nil
 		case req.Method == http.MethodPost:
 			return textResponse(http.StatusOK, "ok"), nil
 		default:

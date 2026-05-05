@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 )
 
@@ -92,7 +93,8 @@ func (c *ConnectClient) volume(ctx context.Context, volume int) error {
 		if fromID == "" || state.activeDeviceID == "" {
 			return errors.New("missing device id")
 		}
-		return c.sendConnectCommand(ctx, fmt.Sprintf("%s/connect/volume/from/%s/to/%s", connectStateBase, fromID, state.activeDeviceID), map[string]any{
+		url := fmt.Sprintf("%s/connect/volume/from/%s/to/%s", connectStateBase, fromID, state.activeDeviceID)
+		return c.sendConnectRequest(ctx, http.MethodPut, url, map[string]any{
 			"volume": int(float64(volume) / 100 * 65535),
 		})
 	})
